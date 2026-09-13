@@ -116,14 +116,22 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--panel-solid);padding:10px 16px;border-radius:8px;font-size:15px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3000}
 .toast.on{opacity:1}
 #post{position:fixed;inset:0;z-index:1900;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(24,16,8,.45)}
-.post{max-width:920px;gap:12px}
+.post{max-width:940px;gap:10px}
 .post h2 small{display:block;font-family:var(--f-ui);font-size:14px;color:var(--ink-soft);margin-top:4px}
-.post .banner{width:100%;height:130px;object-fit:cover;display:block;border-radius:8px;border:1px solid var(--line);background:rgba(43,29,14,.08)}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.facts div{background:rgba(43,29,14,.06);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-width:0}
+.facts b{display:block;font-family:var(--f-caps);font-weight:400;letter-spacing:.08em;font-size:12px;color:var(--accent)}
+.facts span{font-size:14px;line-height:1.3;display:block}
+.facts small{color:var(--ink-soft);font-size:12px}
+.fact{font-size:15px;line-height:1.4;padding:8px 12px;background:rgba(184,134,43,.12);border:1px solid rgba(184,134,43,.35);border-radius:8px}
+.fact b{font-family:var(--f-caps);font-weight:400;letter-spacing:.08em;font-size:12px;color:var(--accent);margin-right:6px}
+@media (max-width:700px){.facts{grid-template-columns:1fr 1fr}}
+.post .banner{width:100%;height:110px;object-fit:cover;display:block;border-radius:8px;border:1px solid var(--line);background:rgba(43,29,14,.08)}
 .photos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .photos.one{grid-template-columns:1fr}
-.photos.one img{height:340px}
+.photos.one img{height:280px}
 .photos figure{margin:0;background:rgba(43,29,14,.06);border-radius:8px;overflow:hidden;border:1px solid var(--line)}
-.photos img{width:100%;height:320px;object-fit:cover;display:block;background:rgba(43,29,14,.08)}
+.photos img{width:100%;height:250px;object-fit:cover;display:block;background:rgba(43,29,14,.08)}
 .photos figcaption{padding:8px 10px;font-size:14px;line-height:1.3}
 .photos figcaption b{font-family:var(--f-caps);font-weight:400;letter-spacing:.08em;font-size:13px;color:var(--accent);display:block}
 .credits{font-size:11px;color:var(--ink-soft);line-height:1.4}
@@ -191,6 +199,8 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 <div id="post" hidden>
   <div class="sheet post">
     <h2 id="post-title">Postcard</h2>
+    <div class="facts" id="post-facts"></div>
+    <div class="fact" id="post-fact" hidden></div>
     <div id="post-banner"></div>
     <div class="photos" id="post-photos"></div>
     <div class="credits" id="post-credits"></div>
@@ -277,17 +287,27 @@ const borderStyle=()=>({color:'#3B2A14',weight:map.getZoom()<3?.8:1.2,opacity:.6
 function showBorders(on){ if(on&&HI_GJ&&!borders) borders=L.geoJSON(HI_GJ,{pane:'borders',renderer:L.canvas({pane:'borders'}),style:borderStyle,interactive:false}); if(!borders) return; if(on){ if(!map.hasLayer(borders)) borders.addTo(map); } else if(map.hasLayer(borders)) map.removeLayer(borders); }
 map.on('zoomend',()=>{ if(borders&&map.hasLayer(borders)) borders.setStyle(borderStyle); });
 const geomOf=it=>HI[it.raw]||it.geom;
-const PLACES={}; let placesPromise=null;
+const PLACES={}; let placesPromise=null; const US_UNITS=true;
 function loadPlaces(){ if(!placesPromise) placesPromise=fetch('places.json').then(r=>r.json()).then(d=>{ Object.assign(PLACES,d); }).catch(()=>{}); return placesPromise; }
 function showPostcard(it){
-  const pc=PLACES[it.raw]; if(!pc||(!pc.people&&!pc.land&&!pc.banner)) return;
-  $('post-banner').innerHTML=pc.banner?`<img class="banner" src="${pc.banner.src}" alt="${it.name}">`:'';
-  const fig=(k,label)=>pc[k]?`<figure><img src="${pc[k].src}" alt="${label} in ${it.name}"><figcaption><b>${label}</b>${pc[k].title}</figcaption></figure>`:'';
+  const pc=PLACES[it.raw]; if(!pc) return;
   $('post-title').innerHTML=`Postcard from ${it.name}<small>A glimpse of the people and the land.</small>`;
-  $('post-photos').className='photos'+(pc.people&&pc.land?'':' one'); $('post-photos').innerHTML=fig('people','People')+fig('land','Landscape');
-  $('post-credits').textContent='Photos from Wikimedia Commons and Wikivoyage: '+['banner','people','land'].filter(k=>pc[k]).map(k=>`${pc[k].by||'unknown author'} (${pc[k].lic||'free license'})`).join('; ')+'.';
+  const fx=pc.facts||{}; const big=n=>n>=1e9?(n/1e9).toFixed(1).replace(/\.0$/,'')+' billion':n>=1e6?(n/1e6<10?(n/1e6).toFixed(1).replace(/\.0$/,''):Math.round(n/1e6))+' million':Math.round(n/1e3)+',000';
+  const areaTxt=fx.area?(US_UNITS?Math.round(fx.area*0.3861).toLocaleString()+' mi²':(fx.area>=1e6?(fx.area/1e6).toFixed(1).replace(/\.0$/,'')+' million km²':Math.round(fx.area/1000).toLocaleString()+',000 km²')):'';
+  const cell=(k,v,sub)=>v?`<div><b>${k}</b><span>${v}${sub?` <small>${sub}</small>`:''}</span></div>`:'';
+  $('post-facts').innerHTML=cell('Population',fx.pop?big(fx.pop):'',fx.popRank?`rank ${fx.popRank} of ${fx.n}`:'')+cell('Area',areaTxt,fx.areaRank?`rank ${fx.areaRank} of ${fx.n}`:'')+cell('Capital',fx.capital,'')+cell(fx.langs&&fx.langs.length>1?'Languages':'Language',(fx.langs||[]).join(', '),'');
+  $('post-fact').hidden=!fx.fact; $('post-fact').innerHTML=fx.fact?`<b>Fun fact</b>${fx.fact}`:'';
+  $('post-banner').innerHTML=pc.banner?`<img class="banner" src="${pc.banner.src}" alt="${it.name}">`:'';
+  const pool=pc.photos||[]; const ppl=shuffle(pool.filter(p=>p.kind==='people')), land=shuffle(pool.filter(p=>p.kind!=='people'));
+  const picks=ppl.slice(0,1).concat(land).slice(0,2);
+  const fig=p=>`<figure><img src="${p.src}" alt="${p.kind==='people'?'People':'Landscape'} in ${it.name}"><figcaption><b>${p.kind==='people'?'People':'Landscape'}</b>${p.title}</figcaption></figure>`;
+  $('post-photos').className='photos'+(picks.length===2?'':' one'); $('post-photos').innerHTML=picks.map(fig).join('');
+  const cred=[pc.banner].concat(picks).filter(Boolean).map(p=>`${p.by||'unknown author'} (${p.lic||'free license'})`);
+  $('post-credits').textContent=cred.length?'Photos from Wikimedia Commons and Wikivoyage: '+cred.join('; ')+'.':'';
+  if(!pc.banner&&!picks.length&&!fx.fact) return;
   $('post').hidden=false;
 }
+
 $('post-close').addEventListener('click',()=>{ $('post').hidden=true; });
 $('post-next').addEventListener('click',()=>{ $('post').hidden=true; const b=$('b-next'); if(b) b.click(); });
 setTimeout(loadHi,1500);
@@ -338,7 +358,7 @@ function nextItem(){
   marks.clearLayers(); G.guess=null; G.pin=null; G.piece=null; G.handle=null; G.locked=false; G.tries=0; G.puzzle=(G.mode==='country'); $('hud-result').hidden=true; $('hud-shape').hidden=true;
   if(G.i>=G.items.length) return endRound(false);
   const it=G.items[G.i]; $('hud-round').textContent=`${G.i+1} / ${G.items.length}`; $('hud-score').textContent=G.score;
-  $('post').hidden=true; const pc=it.raw&&PLACES[it.raw]; if(pc) ['banner','people','land'].forEach(k=>{ if(pc[k]) new Image().src=pc[k].src; });
+  $('post').hidden=true; const pc=it.raw&&PLACES[it.raw]; if(pc) [pc.banner].concat(pc.photos||[]).filter(Boolean).forEach(p=>{ new Image().src=p.src; });
   if(G.mode==='city') map.flyToBounds(WORLD_B,{duration:.8}); else worldView();
   if(G.mode==='city'){ $('hud-prompt').innerHTML=`Where is <em>${it.n}</em>, ${it.cd}?`; $('bar').innerHTML=`<button class="btn ghost" id="b-skip">Skip</button><button class="btn primary" id="b-lock" disabled>Tap the map to drop a pin</button>`; $('b-lock').addEventListener('click',lockIn); $('b-skip').addEventListener('click',()=>{ score(0,'Skipped'); }); }
   if(G.mode==='country'){ $('hud-prompt').innerHTML=`Drag <em>${it.name}</em> into place. <button class="say" id="b-say" aria-label="Say the name again">&#128266;</button>`; $('b-say').addEventListener('click',()=>say(it.name)); say(it.name); $('hud-shape').hidden=false; $('hud-shape').innerHTML=`<span style="font-size:13px;color:var(--ink-soft)">${it.cont} &middot; ${Math.round(it.area*0.3861).toLocaleString()} mi&sup2;</span>`; $('bar').innerHTML=`<button class="btn ghost" id="b-skip">Skip</button><button class="btn primary" id="b-lock" disabled>Drag the shape into place</button>`; $('b-lock').addEventListener('click',lockIn); $('b-skip').addEventListener('click',()=>{ score(0,'Skipped'); }); makePiece(it); if(G.i===0) toast('Drag the shape to where it belongs'); }
