@@ -115,6 +115,19 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
 .rows div span.miss{color:var(--bad)}
 .toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--panel-solid);padding:10px 16px;border-radius:8px;font-size:15px;font-weight:700;opacity:0;transition:opacity .2s;pointer-events:none;z-index:3000}
 .toast.on{opacity:1}
+#post{position:fixed;inset:0;z-index:1900;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(24,16,8,.45)}
+.post{max-width:920px;gap:12px}
+.post h2 small{display:block;font-family:var(--f-ui);font-size:14px;color:var(--ink-soft);margin-top:4px}
+.post .banner{width:100%;height:130px;object-fit:cover;display:block;border-radius:8px;border:1px solid var(--line);background:rgba(43,29,14,.08)}
+.photos{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.photos.one{grid-template-columns:1fr}
+.photos.one img{height:340px}
+.photos figure{margin:0;background:rgba(43,29,14,.06);border-radius:8px;overflow:hidden;border:1px solid var(--line)}
+.photos img{width:100%;height:320px;object-fit:cover;display:block;background:rgba(43,29,14,.08)}
+.photos figcaption{padding:8px 10px;font-size:14px;line-height:1.3}
+.photos figcaption b{font-family:var(--f-caps);font-weight:400;letter-spacing:.08em;font-size:13px;color:var(--accent);display:block}
+.credits{font-size:11px;color:var(--ink-soft);line-height:1.4}
+@media (max-width:700px){.photos{grid-template-columns:1fr}.photos img{height:200px}.post .banner{height:80px}}
 .drag-piece{cursor:grab}
 .drag-piece.dragging{cursor:grabbing}
 </style>
@@ -171,6 +184,19 @@ button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
     <div style="display:flex;gap:10px;flex-wrap:wrap">
       <button class="btn primary" id="btn-again" style="flex:1">Play again</button>
       <button class="btn" id="btn-menu" style="flex:1">Menu</button>
+    </div>
+  </div>
+</div>
+
+<div id="post" hidden>
+  <div class="sheet post">
+    <h2 id="post-title">Postcard</h2>
+    <div id="post-banner"></div>
+    <div class="photos" id="post-photos"></div>
+    <div class="credits" id="post-credits"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn" id="post-close" style="flex:1">Back to the map</button>
+      <button class="btn primary" id="post-next" style="flex:1">Next</button>
     </div>
   </div>
 </div>
@@ -250,7 +276,20 @@ map.createPane('borders'); map.getPane('borders').style.zIndex=350;
 const borderStyle=()=>({color:'#3B2A14',weight:map.getZoom()<3?.8:1.2,opacity:.6,fill:false});
 function showBorders(on){ if(on&&HI_GJ&&!borders) borders=L.geoJSON(HI_GJ,{pane:'borders',renderer:L.canvas({pane:'borders'}),style:borderStyle,interactive:false}); if(!borders) return; if(on){ if(!map.hasLayer(borders)) borders.addTo(map); } else if(map.hasLayer(borders)) map.removeLayer(borders); }
 map.on('zoomend',()=>{ if(borders&&map.hasLayer(borders)) borders.setStyle(borderStyle); });
-const geomOf=it=>HI[it.raw]||geomOf(it);
+const geomOf=it=>HI[it.raw]||it.geom;
+const PLACES={}; let placesPromise=null;
+function loadPlaces(){ if(!placesPromise) placesPromise=fetch('places.json').then(r=>r.json()).then(d=>{ Object.assign(PLACES,d); }).catch(()=>{}); return placesPromise; }
+function showPostcard(it){
+  const pc=PLACES[it.raw]; if(!pc||(!pc.people&&!pc.land&&!pc.banner)) return;
+  $('post-banner').innerHTML=pc.banner?`<img class="banner" src="${pc.banner.src}" alt="${it.name}">`:'';
+  const fig=(k,label)=>pc[k]?`<figure><img src="${pc[k].src}" alt="${label} in ${it.name}"><figcaption><b>${label}</b>${pc[k].title}</figcaption></figure>`:'';
+  $('post-title').innerHTML=`Postcard from ${it.name}<small>A glimpse of the people and the land.</small>`;
+  $('post-photos').className='photos'+(pc.people&&pc.land?'':' one'); $('post-photos').innerHTML=fig('people','People')+fig('land','Landscape');
+  $('post-credits').textContent='Photos from Wikimedia Commons and Wikivoyage: '+['banner','people','land'].filter(k=>pc[k]).map(k=>`${pc[k].by||'unknown author'} (${pc[k].lic||'free license'})`).join('; ')+'.';
+  $('post').hidden=false;
+}
+$('post-close').addEventListener('click',()=>{ $('post').hidden=true; });
+$('post-next').addEventListener('click',()=>{ $('post').hidden=true; const b=$('b-next'); if(b) b.click(); });
 setTimeout(loadHi,1500);
 function pinIcon(cls,label){ return L.divIcon({className:'',html:`<div class="pin ${cls}">${label?`<span class="lbl">${label}</span>`:''}</div>`,iconSize:[26,26],iconAnchor:[13,13]}); }
 
@@ -293,12 +332,13 @@ function poolFor(){
 }
 function startRound(){
   G.items=poolFor(); G.i=0; G.score=0; G.rows=[]; $('start').hidden=true; $('hud').hidden=false; $('bar').hidden=false; $('topright').hidden=false; $('btn-voice').hidden=!(G.mode==='country'||G.mode==='whichCountry'); worldView();
-  if(G.mode==='country'||G.mode==='whichCountry'){ $('hud-prompt').textContent='Loading state shapes'; $('bar').innerHTML=''; loadHi().then(()=>{ showBorders(G.mode==='country'&&G.tier===0); nextItem(); }); } else { showBorders(false); nextItem(); }
+  if(G.mode==='country'||G.mode==='whichCountry'){ $('hud-prompt').textContent='Loading state shapes'; $('bar').innerHTML=''; Promise.all([loadHi(),loadPlaces()]).then(()=>{ showBorders(G.mode==='country'&&G.tier===0); nextItem(); }); } else { showBorders(false); nextItem(); }
 }
 function nextItem(){
   marks.clearLayers(); G.guess=null; G.pin=null; G.piece=null; G.handle=null; G.locked=false; G.tries=0; G.puzzle=(G.mode==='country'); $('hud-result').hidden=true; $('hud-shape').hidden=true;
   if(G.i>=G.items.length) return endRound(false);
   const it=G.items[G.i]; $('hud-round').textContent=`${G.i+1} / ${G.items.length}`; $('hud-score').textContent=G.score;
+  $('post').hidden=true; const pc=it.raw&&PLACES[it.raw]; if(pc) ['banner','people','land'].forEach(k=>{ if(pc[k]) new Image().src=pc[k].src; });
   if(G.mode==='city') map.flyToBounds(WORLD_B,{duration:.8}); else worldView();
   if(G.mode==='city'){ $('hud-prompt').innerHTML=`Where is <em>${it.n}</em>, ${it.cd}?`; $('bar').innerHTML=`<button class="btn ghost" id="b-skip">Skip</button><button class="btn primary" id="b-lock" disabled>Tap the map to drop a pin</button>`; $('b-lock').addEventListener('click',lockIn); $('b-skip').addEventListener('click',()=>{ score(0,'Skipped'); }); }
   if(G.mode==='country'){ $('hud-prompt').innerHTML=`Drag <em>${it.name}</em> into place. <button class="say" id="b-say" aria-label="Say the name again">&#128266;</button>`; $('b-say').addEventListener('click',()=>say(it.name)); say(it.name); $('hud-shape').hidden=false; $('hud-shape').innerHTML=`<span style="font-size:13px;color:var(--ink-soft)">${it.cont} &middot; ${Math.round(it.area*0.3861).toLocaleString()} mi&sup2;</span>`; $('bar').innerHTML=`<button class="btn ghost" id="b-skip">Skip</button><button class="btn primary" id="b-lock" disabled>Drag the shape into place</button>`; $('b-lock').addEventListener('click',lockIn); $('b-skip').addEventListener('click',()=>{ score(0,'Skipped'); }); makePiece(it); if(G.i===0) toast('Drag the shape to where it belongs'); }
@@ -379,7 +419,7 @@ function lockIn(){
 }
 function score(pts,note){
   const it=G.items[G.i]; G.score+=pts; G.rows.push({label:it.name||it.n,pts,note}); $('hud-score').textContent=G.score;
-  if(G.mode==='country'||G.mode==='whichCountry') setTimeout(()=>{ if(G.items[G.i]===it&&!$('hud').hidden) say(it.name); },1000);
+  if(G.mode==='country'||G.mode==='whichCountry') setTimeout(()=>{ if(G.items[G.i]===it&&!$('hud').hidden){ say(it.name); showPostcard(it); } },1000);
   const r=$('hud-result'); r.hidden=false; r.innerHTML=`<span class="pts ${pts===0?'zero':pts===100?'full':''}">+${pts}</span><b>${note}</b>`;
   if(CHOICE_MODES.has(G.mode)&&!G.locked) return;
   const nextHTML=`<button class="btn primary" id="b-next" style="min-width:200px;grid-column:1/-1;justify-content:center">${G.i+1>=G.items.length?'See results':'Next'}</button>`;
@@ -387,7 +427,7 @@ function score(pts,note){
   $('b-next').addEventListener('click',()=>{ G.i++; nextItem(); });
 }
 function endRound(quit){
-  $('hud').hidden=true; $('bar').hidden=true; $('topright').hidden=true; marks.clearLayers(); showBorders(false); worldView();
+  $('hud').hidden=true; $('bar').hidden=true; $('topright').hidden=true; $('post').hidden=true; marks.clearLayers(); showBorders(false); worldView();
   if(quit&&G.rows.length===0){ $('start').hidden=false; return; }
   const total=G.score; const k=bestKey(); const prev=S.best[k]||0; const isBest=!quit&&total>prev; if(isBest){ S.best[k]=total; save(); }
   $('end-score').innerHTML=`${total}<small>of ${G.rows.length*100}</small>`; $('end-best').textContent=isBest?'New best on this mode and level.':(prev?`Best: ${prev}`:'');
